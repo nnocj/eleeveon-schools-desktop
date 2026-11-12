@@ -1,0 +1,9 @@
+{
+  "name": "eleeveon-schools-desktop-dev-shell",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Development-only Windows shell for the Independent runtime (NOT a distribution build)",
+  "main": "main.cjs",
+  "scripts": {"start": "electron ."},
+  "devDependencies": {"electron": "^39.0.0"}
+}
