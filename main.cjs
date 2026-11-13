@@ -42,12 +42,24 @@ app.whenReady().then(async()=>{
    {label:'Exit',role:'quit'}
  ]},{label:'View',submenu:[{role:'reload'},{role:'toggleDevTools'}]}]);
  Menu.setApplicationMenu(appMenu);
- route('independent:activation-details',()=>({
-   ...nativeLicense.inspect(),edition:process.env.ELEEVEON_DESKTOP_EDITION==='multi_device'?'independent_multi_device':'independent_essentials',
-   // Stable non-secret installation fingerprint. The OS-protected installation ID
-   // is the root identity; no MAC addresses or school records are transmitted.
-   machineFingerprint:'eleeveon-install-v1:'+crypto.createHash('sha256').update(nativeLicense.installationId()).digest('hex')
- }));
+ route('independent:activation-details',()=>{
+   // Identity retrieval must work even when an existing certificate is invalid.
+   // NEVER treat a failed licence check as a valid activation.
+   const installationId=nativeLicense.installationId();
+   let licensed=false,claims=null,verificationError=null;
+   try {
+     const checked=nativeLicense.inspect();
+     licensed=checked.licensed===true;
+     claims=checked.claims||null;
+   } catch (error) {
+     verificationError=error instanceof Error?error.message:'Licence verification failed';
+   }
+   return {
+     installationId,licensed,claims,verificationError,
+     edition:process.env.ELEEVEON_DESKTOP_EDITION==='multi_device'?'independent_multi_device':'independent_essentials',
+     machineFingerprint:'eleeveon-install-v1:'+crypto.createHash('sha256').update(installationId).digest('hex')
+   };
+ });
  routeArg('independent:copy-activation-field',arg=>{
    const key=String(arg?.field||'');
    const details={installationId:nativeLicense.installationId(),machineFingerprint:'eleeveon-install-v1:'+crypto.createHash('sha256').update(nativeLicense.installationId()).digest('hex')};
