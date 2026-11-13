@@ -9,6 +9,8 @@ files:
   - snapshot-store.cjs
   - native-web-runtime.cjs
   - renderer/**
+  - activation/**
+  - service-network-policy.cjs
   - resources/**
   - package.json
 extraResources:

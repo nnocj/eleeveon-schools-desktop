@@ -40,7 +40,7 @@ function verifyEnvelope(envelope,keys,expectedInstallationId,now=Math.floor(Date
  return c;
 }
 function atomicWrite(file,data){fs.mkdirSync(path.dirname(file),{recursive:true});const tmp=file+'.'+crypto.randomUUID()+'.tmp';fs.writeFileSync(tmp,data,{mode:0o600,flag:'wx'});try{fs.renameSync(tmp,file);}catch(e){try{fs.unlinkSync(tmp);}catch{}throw e;}}
-function createLicenseStore({userData,safeStorage,publicKeyFile,development=false,developmentKeyFile}){
+function createLicenseStore({userData,safeStorage,publicKeyFile,development=false,developmentKeyFile,expectedEdition=null,expectedMajorVersion=null}){
  // A development license is NEVER enabled in a packaged Electron application.
  // Callers must also set an explicit, local-only opt-in when creating this store.
  const allowDev=development===true;
@@ -60,9 +60,14 @@ function createLicenseStore({userData,safeStorage,publicKeyFile,development=fals
   if(Object.keys(production).some(k=>k.startsWith(DEV_KID_PREFIX)))throw Error('Development issuer must not be in production key bundle');
   return {...production,...developmentKeys};
  }
- function load(){const id=installationId();if(!fs.existsSync(pathLicense))return null;const env=JSON.parse(decrypt(pathLicense));verifyEnvelope(env,keys(),id,Math.floor(Date.now()/1000),allowDev);return env;}
+ function assertProductClaims(claims){
+  if(expectedEdition && claims.edition!==expectedEdition)throw Error('Certificate belongs to a different Independent edition');
+  if(expectedMajorVersion!==null && claims.entitledMajorVersion<expectedMajorVersion)throw Error('License does not entitle this application major version');
+  return claims;
+ }
+ function load(){const id=installationId();if(!fs.existsSync(pathLicense))return null;const env=JSON.parse(decrypt(pathLicense));assertProductClaims(verifyEnvelope(env,keys(),id,Math.floor(Date.now()/1000),allowDev));return env;}
  function inspect(){const id=installationId();const e=load();return {installationId:id,licensed:Boolean(e),claims:e?verifyEnvelope(e,keys(),id,Math.floor(Date.now()/1000),allowDev):null};}
- function importCertificate(envelope){const id=installationId();const c=verifyEnvelope(envelope,keys(),id,Math.floor(Date.now()/1000),allowDev);const current=load();if(current){const old=verifyEnvelope(current,keys(),id,Math.floor(Date.now()/1000),allowDev);if(old.accountId!==c.accountId)throw Error('Cannot replace this school license with another account license');}
+ function importCertificate(envelope){const id=installationId();const c=assertProductClaims(verifyEnvelope(envelope,keys(),id,Math.floor(Date.now()/1000),allowDev));const current=load();if(current){const old=verifyEnvelope(current,keys(),id,Math.floor(Date.now()/1000),allowDev);if(old.accountId!==c.accountId)throw Error('Cannot replace this school license with another account license');}
   atomicWrite(pathLicense,encrypt(JSON.stringify(envelope)));return {licenseId:c.licenseId,accountId:c.accountId,edition:c.edition};
  }
  return {installationId,keys,load,inspect,importCertificate};

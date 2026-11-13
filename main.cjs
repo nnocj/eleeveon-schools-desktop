@@ -1,18 +1,19 @@
 'use strict';
-const {app,BrowserWindow,ipcMain,dialog,session,safeStorage,shell}=require('electron');
+const {app,BrowserWindow,ipcMain,dialog,session,safeStorage,shell,Menu,clipboard}=require('electron');
 const path=require('node:path');const fs=require('node:fs');const crypto=require('node:crypto');
 const vaultLib=require('./vault.cjs');
 const {createLicenseStore}=require('./offline-license.cjs');
 const {persistEncryptedSnapshot,readEncryptedSnapshot}=require('./snapshot-store.cjs');
 const {startBundledPortal,assertLocalUrl}=require('./native-web-runtime.cjs');
 const {businessOrigins,isAllowedServiceRequest,servicePageUrl}=require('./service-network-policy.cjs');
-let win=null;let vault=null;let selectedBackup=null;let timer=null;let localPortal=null;let onlineServicesEnabled=false;
+let win=null;let activationWindow=null;let nativeLicenseStore=null;let vault=null;let selectedBackup=null;let timer=null;let localPortal=null;let onlineServicesEnabled=false;
 const serviceOrigins=businessOrigins();
 const configPath=()=>path.join(app.getPath('userData'),'independent-settings.json');
 function config(){try{return JSON.parse(fs.readFileSync(configPath(),'utf8'));}catch{return {};}}
 function saveConfig(patch){const next={...config(),...patch};fs.mkdirSync(path.dirname(configPath()),{recursive:true});fs.writeFileSync(configPath(),JSON.stringify(next,null,2),{mode:0o600});}
-function requireOpen(){if(!vault)throw Error('Unlock the school before continuing');return vault;}
-const publicState=()=>({opened:!!vault,schoolName:vault?.data.schoolName||null,students:vault?.data.students||[],classes:vault?.data.classes||[],dataFolder:vault?.folder||config().dataFolder||null,backupFolder:selectedBackup||config().backupFolder||null,autoUnlockAvailable:safeStorage.isEncryptionAvailable(),isTrialWorkspace:true});
+function requireLicensed(){if(!nativeLicenseStore?.inspect().claims)throw Error('A valid, signed Independent licence is required');}
+function requireOpen(){requireLicensed();if(!vault)throw Error('Unlock the school before continuing');return vault;}
+const publicState=()=>({opened:!!vault,schoolName:vault?.data.schoolName||null,students:vault?.data.students||[],classes:vault?.data.classes||[],dataFolder:vault?.folder||config().dataFolder||null,backupFolder:selectedBackup||config().backupFolder||null,autoUnlockAvailable:safeStorage.isEncryptionAvailable(),isTrialWorkspace:false});
 async function guardIPC(handler){try{return {ok:true,value:await handler()};}catch(e){return {ok:false,error:e instanceof Error?e.message:'Unknown error'};}}
 function route(name,fn){ipcMain.handle(name,()=>guardIPC(fn));}
 function routeArg(name,fn){ipcMain.handle(name,(_e,arg)=>guardIPC(()=>fn(arg)));}
@@ -22,7 +23,41 @@ app.whenReady().then(async()=>{
   publicKeyFile:path.join(__dirname,'resources','license-issuer-public-keys.json'),
   development: !app.isPackaged && process.env.ELEEVEON_ENABLE_DEV_LICENSE==='1',
   developmentKeyFile:path.join(__dirname,'resources','development-issuer-public-keys.json'),
+  expectedEdition:process.env.ELEEVEON_DESKTOP_EDITION==='multi_device'?'independent_multi_device':'independent_essentials',
+  expectedMajorVersion:1,
 });
+ nativeLicenseStore=nativeLicense;
+ function showActivation(){
+   if(activationWindow && !activationWindow.isDestroyed()){activationWindow.focus();return;}
+   activationWindow=new BrowserWindow({width:670,height:740,minWidth:520,minHeight:580,
+     webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true,preload:path.join(__dirname,'preload.cjs'),webSecurity:true}});
+   activationWindow.setMenuBarVisibility(false);
+   activationWindow.webContents.setWindowOpenHandler(()=>({action:'deny'}));
+   activationWindow.webContents.on('will-navigate',e=>e.preventDefault());
+   activationWindow.loadFile(path.join(__dirname,'activation','index.html'));
+   activationWindow.on('closed',()=>{activationWindow=null;});
+ }
+ const appMenu=Menu.buildFromTemplate([{label:'Eleeveon',submenu:[
+   {label:'Activate or inspect licence',click:showActivation},
+   {label:'Exit',role:'quit'}
+ ]},{label:'View',submenu:[{role:'reload'},{role:'toggleDevTools'}]}]);
+ Menu.setApplicationMenu(appMenu);
+ route('independent:activation-details',()=>({
+   ...nativeLicense.inspect(),edition:process.env.ELEEVEON_DESKTOP_EDITION==='multi_device'?'independent_multi_device':'independent_essentials',
+   // Stable non-secret installation fingerprint. The OS-protected installation ID
+   // is the root identity; no MAC addresses or school records are transmitted.
+   machineFingerprint:'eleeveon-install-v1:'+crypto.createHash('sha256').update(nativeLicense.installationId()).digest('hex')
+ }));
+ routeArg('independent:copy-activation-field',arg=>{
+   const key=String(arg?.field||'');
+   const details={installationId:nativeLicense.installationId(),machineFingerprint:'eleeveon-install-v1:'+crypto.createHash('sha256').update(nativeLicense.installationId()).digest('hex')};
+   if(!Object.hasOwn(details,key))throw Error('Invalid copy field');
+   clipboard.writeText(details[key]);return {copied:true};
+ });
+ route('independent:open-licence-purchase',async()=>{
+   await shell.openExternal(servicePageUrl('/owner/subscription',serviceOrigins.website));return {opened:true};
+ });
+ route('independent:open-activation-window',()=>{showActivation();return {opened:true};});
  routeArg('independent:online-services-access',async input=>{
    // Independent is local by default. Network is enabled only after a deliberate click.
    if(!nativeLicense.inspect().claims?.accountId)throw Error('Verified Independent license required');
@@ -41,7 +76,7 @@ app.whenReady().then(async()=>{
  route('independent:issuer-public-keys',()=>nativeLicense.keys());
  route('independent:license-envelope',()=>nativeLicense.load());
  route('independent:licensed-account',()=>nativeLicense.inspect().claims?.accountId||'');
- route('independent:license-import',async()=>{const r=await dialog.showOpenDialog(win,{title:'Import Eleeveon signed offline license',properties:['openFile'],filters:[{name:'Eleeveon offline license',extensions:['eleeveonlicense','json']}]});if(r.canceled)return null;const stat=fs.statSync(r.filePaths[0]);if(stat.size>20000)throw Error('License file is too large');return nativeLicense.importCertificate(JSON.parse(fs.readFileSync(r.filePaths[0],'utf8')));});
+ route('independent:license-import',async()=>{const r=await dialog.showOpenDialog(win,{title:'Import Eleeveon signed offline license',properties:['openFile'],filters:[{name:'Eleeveon offline license',extensions:['eleeveonlicense','json']}]});if(r.canceled)return null;const stat=fs.statSync(r.filePaths[0]);if(stat.size>20000)throw Error('License file is too large');const imported=nativeLicense.importCertificate(JSON.parse(fs.readFileSync(r.filePaths[0],'utf8')));if(win && !win.isDestroyed())win.show();return imported;});
  await session.defaultSession.setPermissionRequestHandler((_contents,_permission,reply)=>reply(false));
  // Explicitly forbid all external requests: no Render, Vercel, Supabase or telemetry.
  // Network isolation is installed after the local server port is known, below.
@@ -62,8 +97,8 @@ app.whenReady().then(async()=>{
  route('independent:state',()=>publicState());
  route('independent:pick-data',async()=>{const r=await dialog.showOpenDialog(win,{properties:['openDirectory','createDirectory'],title:'Select local school data folder'});return r.canceled?null:r.filePaths[0];});
  route('independent:pick-backup',async()=>{const r=await dialog.showOpenDialog(win,{properties:['openDirectory','createDirectory'],title:'Select encrypted backup folder (Google Drive folder supported)'});if(r.canceled)return null;selectedBackup=r.filePaths[0];saveConfig({backupFolder:selectedBackup});return selectedBackup;});
- routeArg('independent:create',async a=>{if(vault)throw Error('School already unlocked');vault=await vaultLib.newVault(a.folder,a.schoolName,a.password);saveConfig({dataFolder:vault.folder});return publicState();});
- routeArg('independent:unlock',async a=>{if(vault)throw Error('School already unlocked');vault=await vaultLib.openVault(a.folder||config().dataFolder,a.password);saveConfig({dataFolder:vault.folder});return publicState();});
+ routeArg('independent:create',async a=>{requireLicensed();if(vault)throw Error('School already unlocked');vault=await vaultLib.newVault(a.folder,a.schoolName,a.password);saveConfig({dataFolder:vault.folder});return publicState();});
+ routeArg('independent:unlock',async a=>{requireLicensed();if(vault)throw Error('School already unlocked');vault=await vaultLib.openVault(a.folder||config().dataFolder,a.password);saveConfig({dataFolder:vault.folder});return publicState();});
  route('independent:lock',()=>{vault=null;return publicState();});
  routeArg('independent:change-password',async a=>{const result=await vaultLib.changePassword(requireOpen(),a?.currentPassword,a?.newPassword);return result;});
  routeArg('independent:add-student',async a=>{const v=requireOpen();const name=String(a?.name||'').trim();if(!name||name.length>180)throw Error('Enter valid student name');const admission=String(a.admission||'').trim();if(!admission||admission.length>90)throw Error('Admission number required');if(v.data.students.some(s=>s.admission===admission))throw Error('Admission number already exists');const record={id:crypto.randomUUID(),name,admission,createdAt:new Date().toISOString()};v.data.students.push(record);await vaultLib.saveVault(v);return publicState();});
@@ -91,6 +126,9 @@ app.whenReady().then(async()=>{
      callback({});
    });
    await win.loadURL(localPortal.url);
+   // Show the activation workflow on first launch, or if the certificate is no longer valid.
+   try{if(!nativeLicense.inspect().licensed){win.hide();showActivation();}}
+   catch(error){console.error('License verification:',error.message);win.hide();showActivation();}
  } catch(error) {
    console.error('Independent portal could not start:',error);
    // No silent fallback to a demonstration school workspace.
