@@ -131,9 +131,18 @@ app.whenReady().then(async()=>{
    catch(error){console.error('License verification:',error.message);win.hide();showActivation();}
  } catch(error) {
    console.error('Independent portal could not start:',error);
-   // No silent fallback to a demonstration school workspace.
-   await dialog.showMessageBox(win,{type:'error',title:'Independent portal unavailable',message:'The real school application could not be started.',detail:String(error.message||error)});
-   app.quit();return;
+    // The licence activation UI is native and does not require the Next.js portal.
+    // Never launch a demonstration workspace or bypass licence checks.
+    // Allow installation identity, certificate import, and diagnostics even if
+    // the bundled school portal cannot start.
+    win.hide();
+    showActivation();
+    await dialog.showMessageBox(activationWindow || win,{
+      type:'warning',title:'School portal unavailable',
+      message:'The local school portal could not start. Licence activation remains available.',
+      detail:String(error.message||error)
+    });
+    return;
  }
  const c=config();selectedBackup=c.backupFolder||null;if(c.backupMinutes>0){const m=c.backupMinutes;timer=setInterval(async()=>{if(vault&&selectedBackup){try{await vaultLib.backupVault(vault,selectedBackup);}catch(e){console.error('Backup error:',e.message);}}},m*60_000);timer.unref?.();}
 });
