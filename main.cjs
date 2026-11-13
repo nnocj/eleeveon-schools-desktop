@@ -1,11 +1,13 @@
 'use strict';
-const {app,BrowserWindow,ipcMain,dialog,session,safeStorage}=require('electron');
+const {app,BrowserWindow,ipcMain,dialog,session,safeStorage,shell}=require('electron');
 const path=require('node:path');const fs=require('node:fs');const crypto=require('node:crypto');
 const vaultLib=require('./vault.cjs');
 const {createLicenseStore}=require('./offline-license.cjs');
 const {persistEncryptedSnapshot,readEncryptedSnapshot}=require('./snapshot-store.cjs');
 const {startBundledPortal,assertLocalUrl}=require('./native-web-runtime.cjs');
-let win=null;let vault=null;let selectedBackup=null;let timer=null;let localPortal=null;
+const {businessOrigins,isAllowedServiceRequest,servicePageUrl}=require('./service-network-policy.cjs');
+let win=null;let vault=null;let selectedBackup=null;let timer=null;let localPortal=null;let onlineServicesEnabled=false;
+const serviceOrigins=businessOrigins();
 const configPath=()=>path.join(app.getPath('userData'),'independent-settings.json');
 function config(){try{return JSON.parse(fs.readFileSync(configPath(),'utf8'));}catch{return {};}}
 function saveConfig(patch){const next={...config(),...patch};fs.mkdirSync(path.dirname(configPath()),{recursive:true});fs.writeFileSync(configPath(),JSON.stringify(next,null,2),{mode:0o600});}
@@ -15,7 +17,25 @@ async function guardIPC(handler){try{return {ok:true,value:await handler()};}cat
 function route(name,fn){ipcMain.handle(name,()=>guardIPC(fn));}
 function routeArg(name,fn){ipcMain.handle(name,(_e,arg)=>guardIPC(()=>fn(arg)));}
 app.whenReady().then(async()=>{
- const nativeLicense=createLicenseStore({userData:app.getPath('userData'),safeStorage,publicKeyFile:path.join(__dirname,'resources','license-issuer-public-keys.json')});
+ const nativeLicense=createLicenseStore({
+  userData:app.getPath('userData'),safeStorage,
+  publicKeyFile:path.join(__dirname,'resources','license-issuer-public-keys.json'),
+  development: !app.isPackaged && process.env.ELEEVEON_ENABLE_DEV_LICENSE==='1',
+  developmentKeyFile:path.join(__dirname,'resources','development-issuer-public-keys.json'),
+});
+ routeArg('independent:online-services-access',async input=>{
+   // Independent is local by default. Network is enabled only after a deliberate click.
+   if(!nativeLicense.inspect().claims?.accountId)throw Error('Verified Independent license required');
+   if(typeof input?.enabled!=='boolean')throw Error('Invalid online-services setting');
+   onlineServicesEnabled=input.enabled;
+   return {enabled:onlineServicesEnabled,backendOrigin:serviceOrigins.backend};
+ });
+ routeArg('independent:open-service-page',async input=>{
+   if(!nativeLicense.inspect().claims?.accountId)throw Error('Verified Independent license required');
+   const url=servicePageUrl(input?.page,serviceOrigins.website);
+   await shell.openExternal(url);
+   return {opened:true};
+ });
  route('independent:installation-id',()=>nativeLicense.installationId());
  route('independent:license-status',()=>nativeLicense.inspect());
  route('independent:issuer-public-keys',()=>nativeLicense.keys());
@@ -63,11 +83,11 @@ app.whenReady().then(async()=>{
    const isInternal=(url)=>assertLocalUrl(url,port);
    win.webContents.on('will-navigate',(event,url)=>{if(!isInternal(url))event.preventDefault();});
    win.webContents.on('will-redirect',(event,url)=>{if(!isInternal(url))event.preventDefault();});
-   // Allow only the bundled local portal's requests; block external HTTP(S).
+   // Local-school traffic remains local. Explicit online business services are narrowly permitted on consent.
    // Note: this prevents use of remote APIs, it does not implement local
    // adapters for every Cloud-only portal operation.
    session.defaultSession.webRequest.onBeforeRequest((details,callback)=>{
-     if(/^https?:/i.test(details.url)&&!isInternal(details.url))return callback({cancel:true});
+     if(/^https?:|^wss?:/i.test(details.url)&&!isInternal(details.url)&&!isAllowedServiceRequest(details.url,onlineServicesEnabled,serviceOrigins.backend))return callback({cancel:true});
      callback({});
    });
    await win.loadURL(localPortal.url);

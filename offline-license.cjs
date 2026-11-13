@@ -5,6 +5,10 @@ const path=require('node:path');
 const crypto=require('node:crypto');
 const EDITIONS=new Set(['independent_essentials','independent_multi_device']);
 const LIMITS=['schools','branches','users','students','teachers','devices'];
+const DEV_KID_PREFIX='eleeveon-dev-';
+const DEV_PURPOSE='internal-development';
+const MAX_DEV_SECONDS=7*24*60*60;
+
 function readJSON(file){return JSON.parse(fs.readFileSync(file,'utf8'));}
 function trustedKeys(file){
  const obj=readJSON(file);
@@ -16,11 +20,18 @@ function trustedKeys(file){
  return obj;
 }
 function decodeB64url(s){if(typeof s!=='string'||!s||!/^[A-Za-z0-9_-]+$/.test(s))throw Error('Invalid base64url value');return Buffer.from(s,'base64url');}
-function verifyEnvelope(envelope,keys,expectedInstallationId,now=Math.floor(Date.now()/1000)){
+function verifyEnvelope(envelope,keys,expectedInstallationId,now=Math.floor(Date.now()/1000),allowDevelopment=false){
  if(!envelope||envelope.alg!=='ES256'||typeof envelope.kid!=='string'||!Object.hasOwn(keys,envelope.kid)||typeof envelope.payload!=='string'||envelope.payload.length>16000)throw Error('License issuer not trusted');
  const signature=decodeB64url(envelope.signature);if(signature.length!==64)throw Error('Invalid ECDSA signature length');
  if(!crypto.verify('sha256',Buffer.from(envelope.payload),{key:keys[envelope.kid],dsaEncoding:'ieee-p1363'},signature))throw Error('License signature invalid');
  let c;try{c=JSON.parse(envelope.payload);}catch{throw Error('Invalid license payload');}
+ // Development licenses have a separate signer and NEVER qualify as permanent ownership.
+ const development=c.purpose===DEV_PURPOSE || envelope.kid.startsWith(DEV_KID_PREFIX);
+ if(development){
+  if(!allowDevelopment || !envelope.kid.startsWith(DEV_KID_PREFIX) || c.purpose!==DEV_PURPOSE)throw Error('Development certificate forbidden in production');
+  if(!Number.isSafeInteger(c.expiresAt)||c.expiresAt<=now||c.expiresAt-c.issuedAt>MAX_DEV_SECONDS)throw Error('Development certificate must expire within seven days');
+  if(c.licenseId!==`dev:${c.installationId}`)throw Error('Invalid development certificate identity');
+ } else if(c.purpose) throw Error('Unsupported certificate purpose');
  if(c.v!==1||!c.licenseId||!c.accountId||!c.installationId||c.installationId!==expectedInstallationId||!EDITIONS.has(c.edition))throw Error('License not valid for this installation');
  if(!Number.isSafeInteger(c.issuedAt)||!Number.isSafeInteger(c.notBefore)||c.issuedAt>now+300||c.notBefore>now+300)throw Error('License not yet valid');
  if(c.expiresAt!==null&&(!Number.isSafeInteger(c.expiresAt)||c.expiresAt<=now))throw Error('License has expired');
@@ -29,17 +40,29 @@ function verifyEnvelope(envelope,keys,expectedInstallationId,now=Math.floor(Date
  return c;
 }
 function atomicWrite(file,data){fs.mkdirSync(path.dirname(file),{recursive:true});const tmp=file+'.'+crypto.randomUUID()+'.tmp';fs.writeFileSync(tmp,data,{mode:0o600,flag:'wx'});try{fs.renameSync(tmp,file);}catch(e){try{fs.unlinkSync(tmp);}catch{}throw e;}}
-function createLicenseStore({userData,safeStorage,publicKeyFile}){
+function createLicenseStore({userData,safeStorage,publicKeyFile,development=false,developmentKeyFile}){
+ // A development license is NEVER enabled in a packaged Electron application.
+ // Callers must also set an explicit, local-only opt-in when creating this store.
+ const allowDev=development===true;
+
  const pathId=path.join(userData,'independent-installation.bin');
  const pathLicense=path.join(userData,'independent-license.bin');
  function requireSecure(){if(!safeStorage.isEncryptionAvailable())throw Error('OS protected storage is unavailable. Activate only on a supported configured device.');}
  function encrypt(raw){requireSecure();return safeStorage.encryptString(raw);}
  function decrypt(file){requireSecure();return safeStorage.decryptString(fs.readFileSync(file));}
  function installationId(){requireSecure();if(fs.existsSync(pathId))return decrypt(pathId);const id=crypto.randomUUID();atomicWrite(pathId,encrypt(id));return id;}
- function keys(){return trustedKeys(publicKeyFile);}
- function load(){const id=installationId();if(!fs.existsSync(pathLicense))return null;const env=JSON.parse(decrypt(pathLicense));verifyEnvelope(env,keys(),id);return env;}
- function inspect(){const id=installationId();const e=load();return {installationId:id,licensed:Boolean(e),claims:e?verifyEnvelope(e,keys(),id):null};}
- function importCertificate(envelope){const id=installationId();const c=verifyEnvelope(envelope,keys(),id);const current=load();if(current){const old=verifyEnvelope(current,keys(),id);if(old.accountId!==c.accountId)throw Error('Cannot replace this school license with another account license');}
+ function keys(){
+  const production=trustedKeys(publicKeyFile);
+  if(!allowDev) return production;
+  if(!developmentKeyFile || !fs.existsSync(developmentKeyFile))throw Error('Development issuer public key was not generated');
+  const developmentKeys=trustedKeys(developmentKeyFile);
+  if(Object.keys(developmentKeys).some(k=>!k.startsWith(DEV_KID_PREFIX)))throw Error('Development issuer IDs must use the dev prefix');
+  if(Object.keys(production).some(k=>k.startsWith(DEV_KID_PREFIX)))throw Error('Development issuer must not be in production key bundle');
+  return {...production,...developmentKeys};
+ }
+ function load(){const id=installationId();if(!fs.existsSync(pathLicense))return null;const env=JSON.parse(decrypt(pathLicense));verifyEnvelope(env,keys(),id,Math.floor(Date.now()/1000),allowDev);return env;}
+ function inspect(){const id=installationId();const e=load();return {installationId:id,licensed:Boolean(e),claims:e?verifyEnvelope(e,keys(),id,Math.floor(Date.now()/1000),allowDev):null};}
+ function importCertificate(envelope){const id=installationId();const c=verifyEnvelope(envelope,keys(),id,Math.floor(Date.now()/1000),allowDev);const current=load();if(current){const old=verifyEnvelope(current,keys(),id,Math.floor(Date.now()/1000),allowDev);if(old.accountId!==c.accountId)throw Error('Cannot replace this school license with another account license');}
   atomicWrite(pathLicense,encrypt(JSON.stringify(envelope)));return {licenseId:c.licenseId,accountId:c.accountId,edition:c.edition};
  }
  return {installationId,keys,load,inspect,importCertificate};
