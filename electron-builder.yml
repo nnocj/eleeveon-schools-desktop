@@ -1,0 +1,26 @@
+appId: com.eleeveon.schools.independent
+productName: Eleeveon Schools Independent
+asar: true
+files:
+  - main.cjs
+  - preload.cjs
+  - vault.cjs
+  - offline-license.cjs
+  - snapshot-store.cjs
+  - native-web-runtime.cjs
+  - renderer/**
+  - resources/**
+  - package.json
+extraResources:
+  - from: independent-web
+    to: independent-web
+    filter:
+      - '**/*'
+win:
+  target:
+    - nsis
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  perMachine: false

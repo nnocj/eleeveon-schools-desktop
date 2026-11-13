@@ -1,0 +1,204 @@
+{
+  "version": 3,
+  "pages404": true,
+  "appType": "app",
+  "caseSensitive": false,
+  "basePath": "",
+  "redirects": [
+    {
+      "source": "/:path+/",
+      "destination": "/:path+",
+      "internal": true,
+      "priority": true,
+      "statusCode": 308,
+      "regex": "^(?:/((?:[^/]+?)(?:/(?:[^/]+?))*))/$"
+    }
+  ],
+  "headers": [],
+  "onMatchHeaders": [],
+  "rewrites": {
+    "beforeFiles": [],
+    "afterFiles": [],
+    "fallback": []
+  },
+  "dynamicRoutes": [
+    {
+      "page": "/verify/[token]",
+      "regex": "^/verify/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPtoken": "nxtPtoken"
+      },
+      "namedRegex": "^/verify/(?<nxtPtoken>[^/]+?)(?:/)?$"
+    }
+  ],
+  "staticRoutes": [
+    {
+      "page": "/",
+      "regex": "^/(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/(?:/)?$"
+    },
+    {
+      "page": "/_global-error",
+      "regex": "^/_global\\-error(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_global\\-error(?:/)?$"
+    },
+    {
+      "page": "/_not-found",
+      "regex": "^/_not\\-found(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_not\\-found(?:/)?$"
+    },
+    {
+      "page": "/accountant",
+      "regex": "^/accountant(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/accountant(?:/)?$"
+    },
+    {
+      "page": "/api/hub/backgrounds",
+      "regex": "^/api/hub/backgrounds(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/hub/backgrounds(?:/)?$"
+    },
+    {
+      "page": "/branch-admin",
+      "regex": "^/branch\\-admin(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/branch\\-admin(?:/)?$"
+    },
+    {
+      "page": "/developer",
+      "regex": "^/developer(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/developer(?:/)?$"
+    },
+    {
+      "page": "/favicon.ico",
+      "regex": "^/favicon\\.ico(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/favicon\\.ico(?:/)?$"
+    },
+    {
+      "page": "/independent/desktop",
+      "regex": "^/independent/desktop(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/independent/desktop(?:/)?$"
+    },
+    {
+      "page": "/independent/start",
+      "regex": "^/independent/start(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/independent/start(?:/)?$"
+    },
+    {
+      "page": "/launch",
+      "regex": "^/launch(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/launch(?:/)?$"
+    },
+    {
+      "page": "/login",
+      "regex": "^/login(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/login(?:/)?$"
+    },
+    {
+      "page": "/owner",
+      "regex": "^/owner(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/owner(?:/)?$"
+    },
+    {
+      "page": "/owner/subscription",
+      "regex": "^/owner/subscription(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/owner/subscription(?:/)?$"
+    },
+    {
+      "page": "/owner/subscriptions",
+      "regex": "^/owner/subscriptions(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/owner/subscriptions(?:/)?$"
+    },
+    {
+      "page": "/parent",
+      "regex": "^/parent(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/parent(?:/)?$"
+    },
+    {
+      "page": "/payment/confirmation",
+      "regex": "^/payment/confirmation(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/payment/confirmation(?:/)?$"
+    },
+    {
+      "page": "/platform-team",
+      "regex": "^/platform\\-team(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/platform\\-team(?:/)?$"
+    },
+    {
+      "page": "/profile",
+      "regex": "^/profile(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/profile(?:/)?$"
+    },
+    {
+      "page": "/register",
+      "regex": "^/register(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/register(?:/)?$"
+    },
+    {
+      "page": "/school-admin",
+      "regex": "^/school\\-admin(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/school\\-admin(?:/)?$"
+    },
+    {
+      "page": "/select-role",
+      "regex": "^/select\\-role(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/select\\-role(?:/)?$"
+    },
+    {
+      "page": "/student",
+      "regex": "^/student(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/student(?:/)?$"
+    },
+    {
+      "page": "/teacher",
+      "regex": "^/teacher(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/teacher(?:/)?$"
+    },
+    {
+      "page": "/verify",
+      "regex": "^/verify(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/verify(?:/)?$"
+    }
+  ],
+  "dataRoutes": [],
+  "rsc": {
+    "header": "rsc",
+    "varyHeader": "rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch",
+    "prefetchHeader": "next-router-prefetch",
+    "didPostponeHeader": "x-nextjs-postponed",
+    "contentTypeHeader": "text/x-component",
+    "suffix": ".rsc",
+    "prefetchSegmentHeader": "next-router-segment-prefetch",
+    "prefetchSegmentSuffix": ".segment.rsc",
+    "prefetchSegmentDirSuffix": ".segments",
+    "clientParamParsing": false,
+    "dynamicRSCPrerender": false
+  },
+  "rewriteHeaders": {
+    "pathHeader": "x-nextjs-rewritten-path",
+    "queryHeader": "x-nextjs-rewritten-query"
+  }
+}

@@ -1,0 +1,1 @@
+globalThis.__RSC_MANIFEST=(globalThis.__RSC_MANIFEST||{});globalThis.__RSC_MANIFEST["/api/hub/backgrounds/route"]={"moduleLoading":{"prefix":"/_next/"},"ssrModuleMapping":{},"edgeSSRModuleMapping":{},"clientModules":{},"entryCSSFiles":{"C:\\Users\\AGNES\\github\\eleeveon-schools-frontend\\app\\api\\hub\\backgrounds\\route":[]},"rscModuleMapping":{},"edgeRscModuleMapping":{}};
