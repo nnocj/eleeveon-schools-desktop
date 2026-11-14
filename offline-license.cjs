@@ -40,7 +40,7 @@ function verifyEnvelope(envelope,keys,expectedInstallationId,now=Math.floor(Date
  return c;
 }
 function atomicWrite(file,data){fs.mkdirSync(path.dirname(file),{recursive:true});const tmp=file+'.'+crypto.randomUUID()+'.tmp';fs.writeFileSync(tmp,data,{mode:0o600,flag:'wx'});try{fs.renameSync(tmp,file);}catch(e){try{fs.unlinkSync(tmp);}catch{}throw e;}}
-function createLicenseStore({userData,safeStorage,publicKeyFile,development=false,developmentKeyFile,expectedEdition=null,expectedMajorVersion=null}){
+function createLicenseStore({userData,safeStorage,publicKeyFile,development=false,developmentKeyFile}){
  // A development license is NEVER enabled in a packaged Electron application.
  // Callers must also set an explicit, local-only opt-in when creating this store.
  const allowDev=development===true;
@@ -60,15 +60,44 @@ function createLicenseStore({userData,safeStorage,publicKeyFile,development=fals
   if(Object.keys(production).some(k=>k.startsWith(DEV_KID_PREFIX)))throw Error('Development issuer must not be in production key bundle');
   return {...production,...developmentKeys};
  }
- function assertProductClaims(claims){
-  if(expectedEdition && claims.edition!==expectedEdition)throw Error('Certificate belongs to a different Independent edition');
-  if(expectedMajorVersion!==null && claims.entitledMajorVersion<expectedMajorVersion)throw Error('License does not entitle this application major version');
-  return claims;
- }
- function load(){const id=installationId();if(!fs.existsSync(pathLicense))return null;const env=JSON.parse(decrypt(pathLicense));assertProductClaims(verifyEnvelope(env,keys(),id,Math.floor(Date.now()/1000),allowDev));return env;}
+ function load(){const id=installationId();if(!fs.existsSync(pathLicense))return null;const env=JSON.parse(decrypt(pathLicense));verifyEnvelope(env,keys(),id,Math.floor(Date.now()/1000),allowDev);return env;}
  function inspect(){const id=installationId();const e=load();return {installationId:id,licensed:Boolean(e),claims:e?verifyEnvelope(e,keys(),id,Math.floor(Date.now()/1000),allowDev):null};}
- function importCertificate(envelope){const id=installationId();const c=assertProductClaims(verifyEnvelope(envelope,keys(),id,Math.floor(Date.now()/1000),allowDev));const current=load();if(current){const old=verifyEnvelope(current,keys(),id,Math.floor(Date.now()/1000),allowDev);if(old.accountId!==c.accountId)throw Error('Cannot replace this school license with another account license');}
-  atomicWrite(pathLicense,encrypt(JSON.stringify(envelope)));return {licenseId:c.licenseId,accountId:c.accountId,edition:c.edition};
+ function importCertificate(envelope){
+  // Always verify the *new* certificate first, including its issuer signature,
+  // installation binding and required claims. An untrusted certificate cannot
+  // be used to overwrite an active trusted certificate for another account.
+  const id=installationId();
+  const c=verifyEnvelope(envelope,keys(),id,Math.floor(Date.now()/1000),allowDev);
+  if(fs.existsSync(pathLicense)){
+   let previous;
+   try{
+    previous=load();
+   }catch(error){
+    // Recover from a previously stored invalid certificate (for example an
+    // old issuer, an expired certificate or an interrupted local write).
+    // Do not swallow storage/permission failures or OS encryption failures.
+    const message=error instanceof Error?error.message:'';
+    const invalidCertificate=[
+     'License issuer not trusted','Invalid ECDSA signature length',
+     'License signature invalid','Invalid license payload',
+     'Development certificate forbidden in production',
+     'Development certificate must expire within seven days',
+     'Invalid development certificate identity',
+     'Unsupported certificate purpose','License not valid for this installation',
+     'License not yet valid','License has expired',
+     'Application version not entitled','Invalid license limits',
+    ].includes(message) || error instanceof SyntaxError;
+    if(!invalidCertificate)throw error;
+    previous=null;
+   }
+   if(previous){
+    const old=verifyEnvelope(previous,keys(),id,Math.floor(Date.now()/1000),allowDev);
+    if(old.accountId!==c.accountId)
+     throw Error('Cannot replace this school license with another account license');
+   }
+  }
+  atomicWrite(pathLicense,encrypt(JSON.stringify(envelope)));
+  return {licenseId:c.licenseId,accountId:c.accountId,edition:c.edition};
  }
  return {installationId,keys,load,inspect,importCertificate};
 }
